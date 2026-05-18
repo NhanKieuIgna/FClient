@@ -6,6 +6,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -48,6 +49,7 @@ namespace FClient
         private Button btnConnect;
         private Button btnDisconnect;
         private Button btnLogin;
+        private Button btnLogout;
         private Button btnUpload;
         private Button btnDownload;
         private Button btnCreateFolder;
@@ -132,6 +134,15 @@ namespace FClient
             lblUser.Left = 20;
             lblUser.Top = 73;
             this.Controls.Add(lblUser);
+
+            btnLogout = new Button();
+            btnLogout.Text = "LOGOUT";
+            btnLogout.Left = 570;
+            btnLogout.Top = 68;
+            btnLogout.Width = 100;
+            btnLogout.Enabled = false;
+            btnLogout.Click += BtnLogout_Click;
+            this.Controls.Add(btnLogout);
 
             txtUser = new TextBox();
             txtUser.Text = "user1";
@@ -353,22 +364,106 @@ namespace FClient
         private void BtnLogin_Click(object sender, EventArgs e)
         {
             string username = txtUser.Text.Trim();
-
             string password = txtPass.Text.Trim();
 
-            // Gửi USER
-            SendCommand("USER " + username);
+            if (username == "" || password == "")
+            {
+                MessageBox.Show("Vui lòng nhập username và password");
+                return;
+            }
 
-            // Gửi PASS
-            SendCommand("PASS " + password);
+            try
+            {
+                // Gửi USER
+                Log("CLIENT: USER " + username);
+                writer.WriteLine("USER " + username);
 
-            // Mở các nút chức năng
-            btnUpload.Enabled = true;
-            btnDownload.Enabled = true;
-            btnCreateFolder.Enabled = true;
-            btnList.Enabled = true;
+                string userResponse = reader.ReadLine();
+                Log("SERVER: " + userResponse);
 
-            btnLogin.Enabled = false;
+                // Nếu server không yêu cầu password thì dừng
+                if (userResponse == null || !userResponse.StartsWith("331"))
+                {
+                    MessageBox.Show("Username không hợp lệ");
+                    return;
+                }
+
+                // Gửi PASS
+                string passwordHash = HashPassword(password);
+
+                Log("CLIENT: PASS ******");
+                writer.WriteLine("PASS " + passwordHash);
+                string passResponse = reader.ReadLine();
+                Log("SERVER: " + passResponse);
+
+                // Nếu đăng nhập thành công
+                if (passResponse != null && passResponse.StartsWith("230"))
+                {
+                    btnUpload.Enabled = true;
+                    btnDownload.Enabled = true;
+                    btnCreateFolder.Enabled = true;
+                    btnList.Enabled = true;
+
+                    btnLogin.Enabled = false;
+                    btnLogout.Enabled = true;
+
+                    lblStatus.Text = "Đăng nhập thành công";
+                    MessageBox.Show("Đăng nhập thành công");
+                }
+                else
+                {
+                    btnUpload.Enabled = false;
+                    btnDownload.Enabled = false;
+                    btnCreateFolder.Enabled = false;
+                    btnList.Enabled = false;
+
+                    btnLogin.Enabled = true;
+                    btnLogout.Enabled = false;
+
+                    lblStatus.Text = "Đăng nhập thất bại";
+                    MessageBox.Show("Sai tài khoản hoặc mật khẩu");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("Lỗi đăng nhập: " + ex.Message);
+                MessageBox.Show("Lỗi đăng nhập: " + ex.Message);
+            }
+        }
+
+        private void BtnLogout_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                Log("CLIENT: LOGOUT");
+                writer.WriteLine("LOGOUT");
+
+                string response = reader.ReadLine();
+                Log("SERVER: " + response);
+
+                if (response != null && response.StartsWith("231"))
+                {
+                    btnUpload.Enabled = false;
+                    btnDownload.Enabled = false;
+                    btnCreateFolder.Enabled = false;
+                    btnList.Enabled = false;
+
+                    btnLogin.Enabled = true;
+                    btnLogout.Enabled = false;
+
+                    lblStatus.Text = "Đã đăng xuất";
+
+                    MessageBox.Show("Đăng xuất thành công");
+                }
+                else
+                {
+                    MessageBox.Show("Đăng xuất thất bại");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("Lỗi logout: " + ex.Message);
+            }
         }
 
         // ========================================================
@@ -614,6 +709,7 @@ namespace FClient
             btnDownload.Enabled = false;
             btnCreateFolder.Enabled = false;
             btnList.Enabled = false;
+            btnLogout.Enabled = false;
 
             Log("Đã đóng kết nối");
         }
@@ -629,6 +725,24 @@ namespace FClient
                 + message;
 
             txtLog.AppendText(text + Environment.NewLine);
+        }
+
+        private string HashPassword(string password)
+        {
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(password);
+                byte[] hashBytes = sha.ComputeHash(bytes);
+
+                StringBuilder sb = new StringBuilder();
+
+                foreach (byte b in hashBytes)
+                {
+                    sb.Append(b.ToString("x2"));
+                }
+
+                return sb.ToString();
+            }
         }
     }
 }
